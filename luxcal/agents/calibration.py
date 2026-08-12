@@ -18,20 +18,20 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import anthropic
-import yaml
 from pydantic import Field, TypeAdapter, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
 
+from luxcal.agents._llm import parse_json, response_text
 from luxcal.core.ceilings import compute_ceilings
-from luxcal.core.locus import LOCUS_GRID, filter_loci
+from luxcal.core.config import load_rubric, ordinal_maps
+from luxcal.core.locus import LOCUS_DESCRIPTIONS, LOCUS_GRID, filter_loci
 from luxcal.core.schemas import (
     Band,
     BrandProfile,
     CalibrationOutput,
-    ExcludedLocus,
     GateDecision,
     GridLocus,
     LuxcalModel,
@@ -48,23 +48,6 @@ _MAX_TOKENS = 4096
 _RANKED_LOCI = TypeAdapter(list[RankedLocus])
 
 T = TypeVar("T")
-
-# Prose labels for the grid cells (SPEC §3.3). Only the descriptions live here;
-# the native visibility and intensity demands are read from `LOCUS_GRID` so the
-# two cannot drift apart.
-_LOCUS_DESCRIPTIONS: dict[GridLocus, str] = {
-    "PRE_BACKSTAGE": "Demand forecasting and allocation; backstage, before the client encounter",
-    "PRE_ADVISOR": "Client dossier and relationship preparation; advisor-mediated, before the encounter",
-    "PRE_CLIENT": "Targeted outreach and campaign; client-direct, before the encounter",
-    "AT_BACKSTAGE": "Inventory, authentication and provenance; backstage, during the encounter",
-    "AT_ADVISOR": "Advisor assistant and configurator support; advisor-mediated, during the encounter",
-    "AT_CLIENT": "Client-facing assistant or interface; client-direct, during the encounter",
-    "POST_BACKSTAGE": "Service and care analytics; backstage, after the encounter",
-    "POST_ADVISOR": "Follow-up prompting; advisor-mediated, after the encounter",
-    "POST_CLIENT": "Direct aftercare communication; client-direct, after the encounter",
-    "NON_BACKSTAGE": "Product and design development input; backstage, outside any client encounter",
-    "NON_CLIENT": "Brand content and narrative generation; client-direct, outside any client encounter",
-}
 
 
 class _ResponseError(ValueError):
@@ -92,7 +75,7 @@ async def run_calibration(
     `{"terminal_state": "ERROR"}`.
     """
     profile: BrandProfile = state["profile"]
-    rubric = _load_rubric(Path(config["rubric_path"]))
+    rubric = load_rubric(Path(config["rubric_path"]))
     model = config["model_judge"]
 
     try:
@@ -109,7 +92,7 @@ async def run_calibration(
 
             # (ii) Ceilings — deterministic, computed on both paths.
             visibility_band, intensity_band = compute_ceilings(
-                profile, _ordinal_maps(rubric)
+                profile, ordinal_maps(rubric)
             )
 
             if gate.gate_decision == "REFUSE":
@@ -207,7 +190,7 @@ async def _call_with_retries(
                 messages=[{"role": "user", "content": turn}],
             )
             latency_ms = int((time.perf_counter() - started) * 1000)
-            text = _response_text(response)
+            text = response_text(response)
 
             def record(schema_valid: bool) -> None:
                 logger.log_call(
@@ -225,7 +208,7 @@ async def _call_with_retries(
                 )
 
             try:
-                parsed = parse(_parse_json(text))
+                parsed = parse(parse_json(text))
             except retryable as exc:
                 record(schema_valid=False)
                 # Tenacity clears `retry_state.outcome` between attempts, so
@@ -355,7 +338,7 @@ def _locus_line(locus: GridLocus) -> str:
     """Render one locus with its description and native demands."""
     native_visibility, native_intensity = LOCUS_GRID[locus]
     return (
-        f"- {locus}: {_LOCUS_DESCRIPTIONS[locus]}; "
+        f"- {locus}: {LOCUS_DESCRIPTIONS[locus]}; "
         f"visibility {native_visibility}, intensity {native_intensity}"
     )
 
@@ -382,24 +365,6 @@ def _profile_block(profile: BrandProfile, rubric: dict) -> str:
     return "\n".join(lines).rstrip()
 
 
-def _ordinal_maps(rubric: dict) -> dict[str, dict[str, int]]:
-    """Merge the rubric's two ceiling blocks and upper-case the dimension keys.
-
-    `compute_ceilings` works in the vocabulary `schemas.py` declares (`D1`-`D5`),
-    while the rubric spells its keys lowercase and separates `ordinal_maps`
-    (d1-d4) from `adjustment_map` (d5). This normalisation belongs in a shared
-    config loader once one exists.
-    """
-    ceilings = rubric["ceilings"]
-    merged = {**ceilings["ordinal_maps"], **ceilings["adjustment_map"]}
-    return {dimension.upper(): positions for dimension, positions in merged.items()}
-
-
-def _load_rubric(rubric_path: Path) -> dict:
-    """Read the versioned rubric, tolerating a byte-order mark."""
-    return yaml.safe_load(rubric_path.read_text(encoding="utf-8-sig"))
-
-
 def _with_error(user_prompt: str, previous_error: Optional[str]) -> str:
     """Append the prior validation error to the user turn on a retry."""
     if previous_error is None:
@@ -408,19 +373,3 @@ def _with_error(user_prompt: str, previous_error: Optional[str]) -> str:
         f"{user_prompt}\n\nYour previous response failed validation: "
         f"{previous_error}. Please correct and return valid JSON."
     )
-
-
-def _response_text(response: anthropic.types.Message) -> str:
-    """Concatenate the text blocks of a response."""
-    return "".join(block.text for block in response.content if block.type == "text")
-
-
-def _parse_json(text: str) -> Any:
-    """Parse the response body, tolerating a code fence around the JSON."""
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        stripped = "\n".join(lines)
-    return json.loads(stripped)

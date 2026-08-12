@@ -12,9 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 
 from luxcal.core.ceilings import BAND_ORDER, compute_ceilings, to_band
+from luxcal.core.config import load_rubric, ordinal_maps
 from luxcal.core.schemas import Band, BrandProfile
 
 ORDINAL_MAPS: dict[str, dict[str, int]] = {
@@ -171,22 +171,18 @@ def test_to_band_is_deterministic() -> None:
 
 
 def test_literal_maps_match_the_rubric() -> None:
-    """The literal maps above must equal the rubric's, normalised as the loader will.
+    """The literal maps above must equal what the config loader builds.
 
-    This is the normalisation `config.py` owes `compute_ceilings`: merge the
-    two rubric blocks, then upper-case the dimension keys into `DimensionId`.
+    `config.ordinal_maps` performs the merge and the upper-casing that
+    `compute_ceilings` depends on; this pins the hand-written maps to it, so a
+    rubric edit that changes the arithmetic fails here rather than silently
+    shifting every band.
     """
-    rubric = yaml.safe_load(RUBRIC_PATH.read_text(encoding="utf-8-sig"))
-    ceilings = rubric["ceilings"]
-
-    merged = {**ceilings["ordinal_maps"], **ceilings["adjustment_map"]}
-    from_rubric = {dimension.upper(): positions for dimension, positions in merged.items()}
-
-    assert from_rubric == ORDINAL_MAPS
+    assert ordinal_maps(load_rubric(RUBRIC_PATH)) == ORDINAL_MAPS
 
 
 def test_band_order_matches_the_rubric() -> None:
-    rubric = yaml.safe_load(RUBRIC_PATH.read_text(encoding="utf-8-sig"))
+    rubric = load_rubric(RUBRIC_PATH)
 
     assert list(BAND_ORDER) == rubric["bands"]["ordinal_order"]
     assert BAND_ORDER == {"LOW": 0, "MEDIUM": 1, "HIGH": 2}

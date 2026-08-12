@@ -10,7 +10,7 @@ from typing import get_args
 
 import pytest
 
-from luxcal.core.locus import LOCUS_GRID, filter_loci
+from luxcal.core.locus import LOCUS_DESCRIPTIONS, LOCUS_GRID, filter_loci
 from luxcal.core.schemas import Band, ExclusionReason, GridLocus
 
 BACKSTAGE_CELLS = ["PRE_BACKSTAGE", "AT_BACKSTAGE", "POST_BACKSTAGE", "NON_BACKSTAGE"]
@@ -31,6 +31,17 @@ def test_grid_has_exactly_eleven_cells() -> None:
     """UNMAPPED is not a cell, so the grid covers every GridLocus and no more."""
     assert len(LOCUS_GRID) == 11
     assert set(LOCUS_GRID) == set(get_args(GridLocus))
+
+
+def test_descriptions_cover_exactly_the_grid() -> None:
+    """The two dicts must describe the same eleven cells.
+
+    A cell with no description would reach the Agent 2 ranking prompt as a bare
+    name with no context, and a description with no cell would never be
+    reachable — both silent, so they are pinned here.
+    """
+    assert set(LOCUS_DESCRIPTIONS) == set(LOCUS_GRID)
+    assert all(description for description in LOCUS_DESCRIPTIONS.values())
 
 
 def test_native_visibility_follows_the_facing_axis() -> None:

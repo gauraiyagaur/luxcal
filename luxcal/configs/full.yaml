@@ -1,0 +1,17 @@
+# LUXCAL run config — variant: full
+#
+# The complete pipeline with every node enabled. Ablation variants
+# (minus_critic, minus_calibration, ...) copy this file and change what they
+# need; the variant name itself is passed to RunLogger, not read from here.
+#
+# Paths are relative to the process working directory (the repository root).
+#
+# Model strings are pinned exactly as the API publishes them. Current Claude
+# model IDs carry no date suffix — `claude-sonnet-4-6` is the complete,
+# non-floating identifier, and appending a date makes it invalid. What SPEC
+# §7.5 is guarding against is a drifting alias, not the absence of a date.
+
+model_generation: claude-sonnet-4-6
+model_judge: claude-opus-4-6
+
+rubric_path: luxcal/rubric/rubric_v1.yaml

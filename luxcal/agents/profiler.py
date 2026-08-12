@@ -17,10 +17,11 @@ from pathlib import Path
 from typing import Any, Optional, get_args
 
 import anthropic
-import yaml
 from pydantic import ValidationError
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
 
+from luxcal.agents._llm import parse_json, response_text
+from luxcal.core.config import load_rubric
 from luxcal.core.schemas import BrandProfile, Category
 from luxcal.core.state import LuxcalState
 from luxcal.logging.run_logger import RunLogger
@@ -47,7 +48,7 @@ async def run_profiler(
     run is terminated with `{"terminal_state": "ERROR"}` rather than returning
     a partial or fabricated profile.
     """
-    rubric = _load_rubric(Path(config["rubric_path"]))
+    rubric = load_rubric(Path(config["rubric_path"]))
     system_prompt = _build_system_prompt(rubric)
     model = config["model_generation"]
     brief = state["brief"]
@@ -106,7 +107,7 @@ async def _extract(
         messages=[{"role": "user", "content": user_prompt}],
     )
     latency_ms = int((time.perf_counter() - started) * 1000)
-    text = _response_text(response)
+    text = response_text(response)
 
     def record(schema_valid: bool) -> None:
         logger.log_call(
@@ -124,18 +125,13 @@ async def _extract(
         )
 
     try:
-        profile = BrandProfile.model_validate(_parse_json(text))
+        profile = BrandProfile.model_validate(parse_json(text))
     except (ValidationError, json.JSONDecodeError):
         record(schema_valid=False)
         raise
 
     record(schema_valid=True)
     return profile
-
-
-def _load_rubric(rubric_path: Path) -> dict:
-    """Read the versioned rubric, tolerating a byte-order mark."""
-    return yaml.safe_load(rubric_path.read_text(encoding="utf-8-sig"))
 
 
 def _build_system_prompt(rubric: dict) -> str:
@@ -258,28 +254,3 @@ def _build_user_prompt(brief: str, previous_error: Optional[str]) -> str:
         f"{prompt}\n\nYour previous response failed validation: "
         f"{previous_error}. Please correct and return valid JSON."
     )
-
-
-def _response_text(response: anthropic.types.Message) -> str:
-    """Concatenate the text blocks of a response.
-
-    Returns an empty string when the response carries no text, which
-    `_parse_json` then surfaces as a decode failure and retries.
-    """
-    return "".join(block.text for block in response.content if block.type == "text")
-
-
-def _parse_json(text: str) -> Any:
-    """Parse the response body, tolerating a code fence around the JSON.
-
-    The prompt asks for bare JSON, but a fence is a common and harmless
-    deviation; stripping it is normalisation rather than repair. Anything else
-    raises `json.JSONDecodeError` and is retried.
-    """
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        stripped = "\n".join(lines)
-    return json.loads(stripped)

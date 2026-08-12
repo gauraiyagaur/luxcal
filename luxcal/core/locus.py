@@ -32,6 +32,23 @@ LOCUS_GRID: dict[GridLocus, tuple[Band, Band]] = {
     "NON_CLIENT": ("HIGH", "MEDIUM"),
 }
 
+# Prose label per cell, transcribed from the same SPEC §3.3 table. Kept beside
+# `LOCUS_GRID` so the two describe the same eleven cells; consumers that need
+# the native demands read them from the grid rather than restating them here.
+LOCUS_DESCRIPTIONS: dict[GridLocus, str] = {
+    "PRE_BACKSTAGE": "Demand forecasting and allocation; backstage, before the client encounter",
+    "PRE_ADVISOR": "Client dossier and relationship preparation; advisor-mediated, before the encounter",
+    "PRE_CLIENT": "Targeted outreach and campaign; client-direct, before the encounter",
+    "AT_BACKSTAGE": "Inventory, authentication and provenance; backstage, during the encounter",
+    "AT_ADVISOR": "Advisor assistant and configurator support; advisor-mediated, during the encounter",
+    "AT_CLIENT": "Client-facing assistant or interface; client-direct, during the encounter",
+    "POST_BACKSTAGE": "Service and care analytics; backstage, after the encounter",
+    "POST_ADVISOR": "Follow-up prompting; advisor-mediated, after the encounter",
+    "POST_CLIENT": "Direct aftercare communication; client-direct, after the encounter",
+    "NON_BACKSTAGE": "Product and design development input; backstage, outside any client encounter",
+    "NON_CLIENT": "Brand content and narrative generation; client-direct, outside any client encounter",
+}
+
 
 def filter_loci(
     visibility_ceiling: Band,
