@@ -326,10 +326,32 @@ reportable result.
 | **Input**          | CalibrationOutput (selected locus, visibility_band, intensity_band), BrandProfile, problem_statement. On a retry iteration, additionally the previous Concept and the Critic's revision directive.                                                                                                                                                                                                                                                                                                         |
 |--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Function**       | Generate a baseline concept for the selected locus that addresses the brief's problem and declares its own position on the visibility and intensity axes.                                                                                                                                                                                                                                                                                                                                                  |
-| **Method**         | Retrieval-grounded generation. Two evidence sources are retrieved and injected: the fixed rubric corpus, providing the luxury-theoretic constraints for the relevant dimensions; and live market evidence retrieved via external API, providing current category context — what comparable houses have deployed, what has failed publicly. The concept must self-declare ai_position and differentiation_unit, which are the operationalisations of the two axes and the fields the Critic checks against. |
+| **Method**         | ### Retrieval approach
+Agent 3 requires two kinds of evidence: theoretical grounding (dimension 
+definitions and diagnostic questions from the rubric) and market evidence 
+(what comparable houses have deployed). These have different retrieval 
+needs.
+Theoretical grounding is injected directly from the versioned rubric YAML. 
+The full rubric fits in the context window, so retrieval-based selection 
+is unnecessary — every run sees the same definitions, deterministically.
+Market evidence is retrieved via a single web search per run, cached 
+against the run_id for reproducibility. This is structured prompt assembly, 
+not retrieval-augmented generation in the indexing sense: the retrieved 
+payload is small enough to inject in full, making chunk selection and 
+re-ranking unnecessary for this task size.If cached payloads grow large enough to exceed the context window 
+in future work, retrieval over the cache becomes justified.
+
+The phased build reflects this: v1 ships with rubric injection only (no 
+market evidence) to validate the Agent 3 / Critic loop in isolation. v2 
+adds the web search layer. The minus_market_rag ablation variant removes 
+v2's market evidence and measures the effect on hallucinated-example rate 
+— a countable metric that does not depend on subjective rating scales.
+                                                       |
+
 | **AI concepts**    | Retrieval-augmented generation over two distinct corpora with different update regimes (fixed rubric, live market). Verbal reinforcement learning (Shinn et al., 2023) on retry: the Critic's per-dimension directive is appended to context as a semantic gradient, constrained to the dimension vocabulary so that feedback cannot drift into generic encouragement.                                                                                                                                     |
 | **Implementation** | Retrieval call, then one generation call at temperature 0.7 (generation is the one place stochasticity is wanted), then Pydantic validation. Retry on Critic rejection carries the full critic_history, not only the most recent verdict, so that the agent does not oscillate between two rejected concepts.                                                                                                                                                                                              |
-| **Tools**          | anthropic; existing FAISS + BM25 + reciprocal rank fusion + cross-encoder retrieval stack (reused from the NESO project); requests plus an academic search API (OpenAlex or Semantic Scholar) and a web search API for trade press; diskcache for snapshotting every retrieved payload against the run_id.                                                                                                                                                                                                 |
+| **Tools**          | anthropic; structured API queries to a web search API (trade press and market evidence); diskcache for snapshotting every retrieved payload against the run_id. Rubric dimension definitions and diagnostic questions are injected directly from rubric_v1.yaml — no retrieval needed for theoretical grounding, since the full rubric fits in the prompt.
+                                                                                |      
 | **Output**         | Concept — name, locus, touchpoint description, ai_position, differentiation_unit, claimed_visibility, claimed_intensity, and the evidence identifiers supporting it.                                                                                                                                                                                                                                                                                                                                       |
 
 class Concept(BaseModel):
