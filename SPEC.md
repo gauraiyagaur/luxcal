@@ -330,8 +330,7 @@ reportable result.
 Agent 3 requires two kinds of evidence: theoretical grounding (dimension 
 definitions and diagnostic questions from the rubric) and market evidence 
 (what comparable houses have deployed). These have different retrieval 
-needs.
-Theoretical grounding is injected directly from the versioned rubric YAML. 
+needs. Theoretical grounding is injected directly from the versioned rubric YAML. 
 The full rubric fits in the context window, so retrieval-based selection 
 is unnecessary — every run sees the same definitions, deterministically.
 Market evidence is retrieved via a single web search per run, cached 

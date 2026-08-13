@@ -39,6 +39,14 @@ class RunConfig(LuxcalModel):
         description="Pinned model for the Agent 2 gate and ranking, and the Critic.",
     )
     rubric_path: Path = Field(description="Path to the versioned rubric file.")
+    critic_max_iterations: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Iteration cap for the ideation-critic loop (SPEC §5.4). Exposed as "
+            "configuration so that {1, 3, 5} can be run as an ablation condition."
+        ),
+    )
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
