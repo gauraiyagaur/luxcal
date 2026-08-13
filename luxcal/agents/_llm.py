@@ -35,6 +35,11 @@ class ResponseError(ValueError):
     """
 
 
+# What `call_with_retries` retries on, and therefore what a caller should catch
+# to detect exhausted retries. Exported so the two cannot drift apart.
+RETRYABLE = (ValidationError, json.JSONDecodeError, ResponseError)
+
+
 def response_text(response: anthropic.types.Message) -> str:
     """Concatenate the text blocks of a response.
 
@@ -82,11 +87,10 @@ async def call_with_retries(
     the schema is the more interesting record of the two.
     """
     previous_error: Optional[str] = None
-    retryable = (ValidationError, json.JSONDecodeError, ResponseError)
 
     async for attempt in AsyncRetrying(
         stop=stop_after_attempt(MAX_ATTEMPTS),
-        retry=retry_if_exception_type(retryable),
+        retry=retry_if_exception_type(RETRYABLE),
         reraise=True,
     ):
         with attempt:
@@ -122,7 +126,7 @@ async def call_with_retries(
 
             try:
                 parsed = parse(parse_json(text))
-            except retryable as exc:
+            except RETRYABLE as exc:
                 record(schema_valid=False)
                 # Tenacity clears `retry_state.outcome` between attempts, so
                 # the error is carried forward here.

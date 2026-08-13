@@ -15,16 +15,13 @@ respectively; nothing here reimplements them.
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any
 
 import anthropic
-from pydantic import Field, TypeAdapter, ValidationError
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
+from pydantic import Field, TypeAdapter
 
-from luxcal.agents._llm import parse_json, response_text
+from luxcal.agents._llm import RETRYABLE, ResponseError, call_with_retries
 from luxcal.core.ceilings import compute_ceilings
 from luxcal.core.config import load_rubric, ordinal_maps
 from luxcal.core.locus import LOCUS_DESCRIPTIONS, LOCUS_GRID, filter_loci
@@ -40,18 +37,10 @@ from luxcal.core.schemas import (
 from luxcal.core.state import LuxcalState
 from luxcal.logging.run_logger import RunLogger
 
-_MAX_ATTEMPTS = 3
-
 # Both responses are small — a paragraph, or eleven short ranking entries.
 _MAX_TOKENS = 4096
 
 _RANKED_LOCI = TypeAdapter(list[RankedLocus])
-
-T = TypeVar("T")
-
-
-class _ResponseError(ValueError):
-    """A response that parsed and validated but is wrong for the request made."""
 
 
 class _GateResponse(LuxcalModel):
@@ -81,13 +70,16 @@ async def run_calibration(
     try:
         async with anthropic.AsyncAnthropic() as client:
             # (i) Gate — semantic judgement.
-            gate = await _call_with_retries(
+            gate = await call_with_retries(
                 client=client,
                 model=model,
+                temperature=0.0,
                 system_prompt=_gate_system_prompt(profile, rubric),
                 user_prompt="Assess this brand profile and return your gate decision.",
+                max_tokens=_MAX_TOKENS,
                 logger=logger,
-                parse=lambda payload: _GateResponse.model_validate(payload),
+                node="calibrate",
+                parse=_GateResponse.model_validate,
             )
 
             # (ii) Ceilings — deterministic, computed on both paths.
@@ -104,17 +96,20 @@ async def run_calibration(
             surviving, excluded = filter_loci(visibility_band, intensity_band)
 
             # (iv) Ranking — semantic judgement over the survivors only.
-            viable_loci = await _call_with_retries(
+            viable_loci = await call_with_retries(
                 client=client,
                 model=model,
+                temperature=0.0,
                 system_prompt=_ranking_system_prompt(
                     profile, surviving, visibility_band, intensity_band
                 ),
                 user_prompt="Rank these loci and return the JSON array.",
+                max_tokens=_MAX_TOKENS,
                 logger=logger,
+                node="calibrate",
                 parse=lambda payload: _validate_ranking(payload, surviving),
             )
-    except (ValidationError, json.JSONDecodeError, _ResponseError):
+    except RETRYABLE:
         return {"terminal_state": "ERROR"}
 
     calibration = CalibrationOutput(
@@ -155,73 +150,6 @@ def _refusal(
     return {"calibration": calibration, "terminal_state": "GATE_NO"}
 
 
-async def _call_with_retries(
-    client: anthropic.AsyncAnthropic,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    logger: RunLogger,
-    parse: Callable[[Any], T],
-) -> T:
-    """Make one logged LLM call, retrying up to twice on an unusable response.
-
-    `parse` receives the decoded JSON and returns the validated object; raising
-    `ValidationError`, `json.JSONDecodeError` or `_ResponseError` from it
-    triggers a retry with the error text appended to the user turn.
-    """
-    previous_error: Optional[str] = None
-    retryable = (ValidationError, json.JSONDecodeError, _ResponseError)
-
-    async for attempt in AsyncRetrying(
-        stop=stop_after_attempt(_MAX_ATTEMPTS),
-        retry=retry_if_exception_type(retryable),
-        reraise=True,
-    ):
-        with attempt:
-            retry_count = attempt.retry_state.attempt_number - 1
-            turn = _with_error(user_prompt, previous_error)
-
-            started = time.perf_counter()
-            response = await client.messages.create(
-                model=model,
-                max_tokens=_MAX_TOKENS,
-                temperature=0.0,
-                system=system_prompt,
-                messages=[{"role": "user", "content": turn}],
-            )
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            text = response_text(response)
-
-            def record(schema_valid: bool) -> None:
-                logger.log_call(
-                    node="calibrate",
-                    model=model,
-                    temperature=0.0,
-                    prompt=f"[system]\n{system_prompt}\n\n[user]\n{turn}",
-                    response=text,
-                    input_tokens=response.usage.input_tokens,
-                    output_tokens=response.usage.output_tokens,
-                    latency_ms=latency_ms,
-                    schema_valid=schema_valid,
-                    retry_count=retry_count,
-                    stop_reason=response.stop_reason,
-                )
-
-            try:
-                parsed = parse(parse_json(text))
-            except retryable as exc:
-                record(schema_valid=False)
-                # Tenacity clears `retry_state.outcome` between attempts, so
-                # the error is carried forward here.
-                previous_error = str(exc)
-                raise
-
-            record(schema_valid=True)
-            return parsed
-
-    raise AssertionError("unreachable: AsyncRetrying either returns or raises")
-
-
 def _validate_ranking(payload: Any, surviving: list[GridLocus]) -> list[RankedLocus]:
     """Validate a ranking and check it actually ranks the loci that survived.
 
@@ -234,14 +162,14 @@ def _validate_ranking(payload: Any, surviving: list[GridLocus]) -> list[RankedLo
 
     ranked = [entry.locus for entry in ranking]
     if sorted(ranked) != sorted(surviving):
-        raise _ResponseError(
+        raise ResponseError(
             f"the ranking must cover exactly the surviving loci {sorted(surviving)}, "
             f"but it ranked {sorted(ranked)}"
         )
 
     ranks = sorted(entry.rank for entry in ranking)
     if ranks != list(range(1, len(ranking) + 1)):
-        raise _ResponseError(
+        raise ResponseError(
             f"ranks must be the consecutive integers 1 to {len(ranking)} with no "
             f"repeats, but were {ranks}"
         )
@@ -363,13 +291,3 @@ def _profile_block(profile: BrandProfile, rubric: dict) -> str:
         lines.append(f"  Evidence: {evidence}")
         lines.append("")
     return "\n".join(lines).rstrip()
-
-
-def _with_error(user_prompt: str, previous_error: Optional[str]) -> str:
-    """Append the prior validation error to the user turn on a retry."""
-    if previous_error is None:
-        return user_prompt
-    return (
-        f"{user_prompt}\n\nYour previous response failed validation: "
-        f"{previous_error}. Please correct and return valid JSON."
-    )

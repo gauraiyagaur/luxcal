@@ -12,22 +12,16 @@ evidence a dimension, the agent must say so rather than inferring silently.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
-from typing import Any, Optional, get_args
+from typing import Any, get_args
 
 import anthropic
-from pydantic import ValidationError
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
 
-from luxcal.agents._llm import parse_json, response_text
+from luxcal.agents._llm import RETRYABLE, call_with_retries
 from luxcal.core.config import load_rubric
 from luxcal.core.schemas import BrandProfile, Category
 from luxcal.core.state import LuxcalState
 from luxcal.logging.run_logger import RunLogger
-
-# Three attempts: the initial call plus the two retries SPEC §5.1 allows.
-_MAX_ATTEMPTS = 3
 
 # The profile is a bounded object — five position records plus two short
 # strings — so this is roughly four times the expected output. It exists to
@@ -49,89 +43,25 @@ async def run_profiler(
     a partial or fabricated profile.
     """
     rubric = load_rubric(Path(config["rubric_path"]))
-    system_prompt = _build_system_prompt(rubric)
-    model = config["model_generation"]
-    brief = state["brief"]
-
-    previous_error: Optional[str] = None
 
     try:
         async with anthropic.AsyncAnthropic() as client:
-            async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(_MAX_ATTEMPTS),
-                retry=retry_if_exception_type((ValidationError, json.JSONDecodeError)),
-                reraise=True,
-            ):
-                with attempt:
-                    retry_count = attempt.retry_state.attempt_number - 1
-                    try:
-                        profile = await _extract(
-                            client=client,
-                            model=model,
-                            system_prompt=system_prompt,
-                            user_prompt=_build_user_prompt(brief, previous_error),
-                            logger=logger,
-                            retry_count=retry_count,
-                        )
-                    except (ValidationError, json.JSONDecodeError) as exc:
-                        # Tenacity clears `retry_state.outcome` between
-                        # attempts, so the error is carried forward here.
-                        previous_error = str(exc)
-                        raise
-    except (ValidationError, json.JSONDecodeError):
+            profile = await call_with_retries(
+                client=client,
+                model=config["model_generation"],
+                temperature=0.0,
+                system_prompt=_build_system_prompt(rubric),
+                user_prompt=_build_user_prompt(state["brief"]),
+                max_tokens=_MAX_TOKENS,
+                logger=logger,
+                node="profiler",
+                parse=BrandProfile.model_validate,
+            )
+    except RETRYABLE:
         return {"terminal_state": "ERROR"}
 
     logger.save_state("profiler", {**state, "profile": profile})
     return {"profile": profile}
-
-
-async def _extract(
-    client: anthropic.AsyncAnthropic,
-    model: str,
-    system_prompt: str,
-    user_prompt: str,
-    logger: RunLogger,
-    retry_count: int,
-) -> BrandProfile:
-    """Make one extraction call, log it, and validate the response.
-
-    The call is logged whether or not the response validates: a response that
-    fails the schema is the more interesting record of the two.
-    """
-    started = time.perf_counter()
-    response = await client.messages.create(
-        model=model,
-        max_tokens=_MAX_TOKENS,
-        temperature=0.0,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    text = response_text(response)
-
-    def record(schema_valid: bool) -> None:
-        logger.log_call(
-            node="profiler",
-            model=model,
-            temperature=0.0,
-            prompt=f"[system]\n{system_prompt}\n\n[user]\n{user_prompt}",
-            response=text,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            latency_ms=latency_ms,
-            schema_valid=schema_valid,
-            retry_count=retry_count,
-            stop_reason=response.stop_reason,
-        )
-
-    try:
-        profile = BrandProfile.model_validate(parse_json(text))
-    except (ValidationError, json.JSONDecodeError):
-        record(schema_valid=False)
-        raise
-
-    record(schema_valid=True)
-    return profile
 
 
 def _build_system_prompt(rubric: dict) -> str:
@@ -245,12 +175,10 @@ def _response_shape(rubric: dict) -> str:
     return json.dumps(shape, indent=2)
 
 
-def _build_user_prompt(brief: str, previous_error: Optional[str]) -> str:
-    """Assemble the user turn, appending the prior validation error on a retry."""
-    prompt = f"Here is the brand brief.\n\n<brief>\n{brief}\n</brief>"
-    if previous_error is None:
-        return prompt
-    return (
-        f"{prompt}\n\nYour previous response failed validation: "
-        f"{previous_error}. Please correct and return valid JSON."
-    )
+def _build_user_prompt(brief: str) -> str:
+    """Assemble the user turn.
+
+    Appending a prior validation error on a retry is `call_with_retries`'s job,
+    not this function's.
+    """
+    return f"Here is the brand brief.\n\n<brief>\n{brief}\n</brief>"

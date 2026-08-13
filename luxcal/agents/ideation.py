@@ -18,9 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import anthropic
-from pydantic import ValidationError
 
-from luxcal.agents._llm import ResponseError, call_with_retries
+from luxcal.agents._llm import RETRYABLE, ResponseError, call_with_retries
 from luxcal.core.config import load_rubric
 from luxcal.core.locus import LOCUS_DESCRIPTIONS
 from luxcal.core.schemas import (
@@ -75,7 +74,7 @@ async def run_ideation(
                 iteration=iteration,
                 parse=lambda payload: _validate_concept(payload, locus),
             )
-    except (ValidationError, ResponseError, ValueError):
+    except RETRYABLE:
         return {"terminal_state": "ERROR"}
 
     logger.save_state(

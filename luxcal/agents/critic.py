@@ -19,12 +19,12 @@ The Critic evaluates and directs. It never proposes a concept of its own.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional, Self
+from typing import Optional, Self
 
 import anthropic
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, model_validator
 
-from luxcal.agents._llm import ResponseError, call_with_retries
+from luxcal.agents._llm import RETRYABLE, call_with_retries
 from luxcal.core.ceilings import BAND_ORDER
 from luxcal.core.config import load_rubric
 from luxcal.core.locus import LOCUS_DESCRIPTIONS
@@ -126,7 +126,7 @@ async def run_critic(
                     iteration=iteration,
                     parse=_Assessment.model_validate,
                 )
-        except (ValidationError, ResponseError, ValueError):
+        except RETRYABLE:
             return {"terminal_state": "ERROR"}
 
         verdict_type = assessment.verdict
