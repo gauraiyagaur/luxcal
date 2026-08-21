@@ -26,7 +26,9 @@ langsmith==0.10.14
 orjson==3.11.9
 ormsgpack==1.12.2
 packaging==26.2
+pandas==3.0.5
 pluggy==1.6.0
+pyarrow==25.0.1
 pydantic==2.13.4
 pydantic-core==2.46.4
 pydantic-settings==2.14.2
