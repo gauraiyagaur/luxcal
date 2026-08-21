@@ -1,0 +1,17 @@
+# LUXCAL run config — variant: minus_critic
+#
+# Diff against full.yaml: variant only.
+#
+# Agent 3's first concept is the final output. The critic node is not
+# added to the graph at all, so no judge call is made and
+# critic_iterations is structurally 0. critic_max_iterations is omitted
+# because there is no loop for it to bound.
+#
+# Paths are relative to the process working directory (the repository root).
+
+model_generation: claude-sonnet-4-6
+model_judge: claude-opus-4-6
+
+variant: minus_critic
+
+rubric_path: luxcal/rubric/rubric_v1.yaml

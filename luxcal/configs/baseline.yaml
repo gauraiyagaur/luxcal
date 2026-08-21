@@ -1,0 +1,16 @@
+# LUXCAL run config — variant: baseline
+#
+# Diff against full.yaml: variant only.
+#
+# No architecture: one prompt, one call, one Concept. Does not run
+# through the graph — use scripts/run_baseline.py. build_graph raises
+# if handed this config, so it cannot be run as a mislabelled full.
+#
+# Paths are relative to the process working directory (the repository root).
+
+model_generation: claude-sonnet-4-6
+model_judge: claude-opus-4-6
+
+variant: baseline
+
+rubric_path: luxcal/rubric/rubric_v1.yaml

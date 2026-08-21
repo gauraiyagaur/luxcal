@@ -77,7 +77,7 @@ def initial_state(run_id: str, case_id: str, brief: str) -> LuxcalState:
     }
 
 
-def resolve_terminal_state(state: dict[str, Any]) -> str | None:
+def resolve_terminal_state(state: dict[str, Any], variant: str) -> str | None:
     """Fill in the terminal state where nothing along the path set one.
 
     Agent 2 writes GATE_NO on a refusal and a failed agent writes ERROR, but
@@ -85,11 +85,25 @@ def resolve_terminal_state(state: dict[str, Any]) -> str | None:
     read from and does not set the field itself. Derived here so that
     `manifest.terminal_state` is populated for every run rather than being
     null on exactly the successful ones. This properly belongs in the Critic.
+
+    The absent-verdict clause is scoped to `minus_critic` deliberately. That
+    variant has no Critic, so no verdict is the designed outcome. In every
+    other variant an absent verdict means the Critic did not return — retry
+    exhaustion, or an error — which is a failure and must not be relabelled
+    PASS.
     """
     if state.get("terminal_state") is not None:
         return state["terminal_state"]
 
     verdict = state.get("verdict")
+
+    if (
+        verdict is None
+        and variant == "minus_critic"
+        and state.get("concept") is not None
+    ):
+        return "PASS"
+
     if verdict is None:
         return None
     if verdict.verdict in {"PASS", "ESCALATE"}:
@@ -128,7 +142,9 @@ async def run(args: argparse.Namespace) -> Path:
 
     final_state = {
         **final_state,
-        "terminal_state": resolve_terminal_state(dict(final_state)),
+        "terminal_state": resolve_terminal_state(
+            dict(final_state), config["variant"]
+        ),
     }
     logger.finalise(final_state)
     return logger.run_dir

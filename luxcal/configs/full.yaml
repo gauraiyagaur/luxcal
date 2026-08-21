@@ -14,6 +14,10 @@
 model_generation: claude-sonnet-4-6
 model_judge: claude-opus-4-6
 
+# The ablation condition. This is what build_graph and Agent 2 branch on;
+# run_single's --variant flag only labels the run in the manifest.
+variant: full
+
 rubric_path: luxcal/rubric/rubric_v1.yaml
 
 # Cap on the ideation-critic loop. Justified by the oversmoothing literature:

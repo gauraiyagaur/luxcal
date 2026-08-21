@@ -1,0 +1,18 @@
+# LUXCAL run config — variant: llm_bands
+#
+# Diff against full.yaml: variant only.
+#
+# Calibration step (ii) substitutes an LLM judgement for the
+# compute_ceilings arithmetic. The gate, the locus filter and the
+# ranking are unchanged, and compute_ceilings itself is untouched.
+#
+# Paths are relative to the process working directory (the repository root).
+
+model_generation: claude-sonnet-4-6
+model_judge: claude-opus-4-6
+
+variant: llm_bands
+
+rubric_path: luxcal/rubric/rubric_v1.yaml
+
+critic_max_iterations: 3

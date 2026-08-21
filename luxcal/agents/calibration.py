@@ -50,6 +50,14 @@ class _GateResponse(LuxcalModel):
     gate_rationale: str = Field(min_length=1)
 
 
+class _BandsResponse(LuxcalModel):
+    """The `llm_bands` ablation's expected response shape."""
+
+    visibility_band: Band
+    intensity_band: Band
+    rationale: str = Field(min_length=1)
+
+
 async def run_calibration(
     state: LuxcalState,
     config: dict,
@@ -82,10 +90,29 @@ async def run_calibration(
                 parse=_GateResponse.model_validate,
             )
 
-            # (ii) Ceilings — deterministic, computed on both paths.
-            visibility_band, intensity_band = compute_ceilings(
-                profile, ordinal_maps(rubric)
-            )
+            # (ii) Ceilings. Deterministic in every variant but `llm_bands`,
+            # which substitutes model judgement for the arithmetic and changes
+            # nothing else: both paths write the same two fields, so the locus
+            # filter, the ideation prompt and the Critic's check 1 are
+            # unaffected. `compute_ceilings` is untouched by the ablation.
+            if config.get("variant") == "llm_bands":
+                bands = await call_with_retries(
+                    client=client,
+                    model=model,
+                    temperature=0.0,
+                    system_prompt=_bands_system_prompt(profile, rubric),
+                    user_prompt="Set the two ceilings for this profile.",
+                    max_tokens=_MAX_TOKENS,
+                    logger=logger,
+                    node="calibrate",
+                    parse=_BandsResponse.model_validate,
+                )
+                visibility_band = bands.visibility_band
+                intensity_band = bands.intensity_band
+            else:
+                visibility_band, intensity_band = compute_ceilings(
+                    profile, ordinal_maps(rubric)
+                )
 
             if gate.gate_decision == "REFUSE":
                 return _refusal(
@@ -212,6 +239,63 @@ Return a single JSON object and nothing else. No preamble, no code fences.
 }}"""
 
 
+def _bands_system_prompt(profile: BrandProfile, rubric: dict) -> str:
+    """Build the `llm_bands` prompt: set both ceilings by judgement.
+
+    The ordinal maps and thresholds are deliberately withheld. Handing over the
+    arithmetic and asking the model to execute it would test arithmetic, not
+    judgement; the ablation is meaningful only if the model is given the same
+    reasoning a human would use and left to reach the bands itself.
+    """
+    dimensions = "\n".join(
+        _dimension_section(dimension) for dimension in rubric["dimensions"]
+    )
+
+    return f"""You are a luxury market research strategist. Your task is to set
+two ceilings for a brand, from its five-dimension profile.
+
+Visibility is how perceptible the AI is to the client. Intensity is how far
+the offering is differentiated per individual. These are distinct failure
+modes: a conspicuous algorithmic greeting is low intensity but high
+visibility, and it is the high visibility that damages the brand. A one-of-one
+commission is maximum intensity but low visibility, and it reinforces rarity
+rather than eroding it.
+
+A ceiling is the most a brand can tolerate on that axis, not a target.
+
+# What governs each axis
+
+Visibility is governed by D2, which is definitionally a visibility constraint,
+and by D4, since consumers motivated by inconspicuous luxury will not tolerate
+perceptible personalisation regardless of its quality.
+
+Intensity is governed by D1, since a house trading on objective scarcity has
+little room to differentiate further without undermining its own scarcity
+logic, and by D3, since emotionally-led brands incur the perceived-uniqueness
+penalty at high intensity while functionally-led brands do not.
+
+D5 adjusts both: strong curatorial control absorbs personalisation that would
+otherwise read as algorithmic banality, and weak control leaves less room on
+either axis.
+
+# The dimensions
+
+{dimensions}
+# This brand's profile
+
+{_profile_block(profile, rubric)}
+
+# Response format
+
+Return a single JSON object and nothing else. No preamble, no code fences.
+
+{{
+  "visibility_band": "<LOW | MEDIUM | HIGH>",
+  "intensity_band": "<LOW | MEDIUM | HIGH>",
+  "rationale": "<one or two sentences on how the positions led to these ceilings>"
+}}"""
+
+
 def _ranking_system_prompt(
     profile: BrandProfile,
     surviving: list[GridLocus],
@@ -269,6 +353,25 @@ def _locus_line(locus: GridLocus) -> str:
         f"- {locus}: {LOCUS_DESCRIPTIONS[locus]}; "
         f"visibility {native_visibility}, intensity {native_intensity}"
     )
+
+
+def _dimension_section(dimension: dict) -> str:
+    """Render one dimension's rubric entry for injection into the prompt.
+
+    Used only by the `llm_bands` prompt: the deterministic path needs the
+    ordinal maps, not the definitions.
+    """
+    questions = "\n".join(
+        f"- {question}" for question in dimension["diagnostic_questions"]
+    )
+    return f"""## {dimension["id"].upper()} — {dimension["name"]}
+
+Definition:
+{dimension["definition"]}
+
+Diagnostic questions:
+{questions}
+"""
 
 
 def _profile_block(profile: BrandProfile, rubric: dict) -> str:

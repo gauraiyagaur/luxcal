@@ -1,0 +1,19 @@
+# LUXCAL run config — variant: minus_loop
+#
+# Diff against full.yaml: variant, plus critic_max_iterations 3 -> 1.
+#
+# The Critic runs exactly once and records a verdict; a REVISE is
+# upgraded to ESCALATE immediately rather than returning to Agent 3.
+# Distinct from minus_critic: here a verdict exists, there is none.
+# This is the loop-quality / oversmoothing ablation (SPEC 5.4).
+#
+# Paths are relative to the process working directory (the repository root).
+
+model_generation: claude-sonnet-4-6
+model_judge: claude-opus-4-6
+
+variant: minus_loop
+
+rubric_path: luxcal/rubric/rubric_v1.yaml
+
+critic_max_iterations: 1

@@ -95,7 +95,14 @@ def build_graph(config: dict, logger: RunLogger) -> CompiledStateGraph:
     No checkpointer is attached. It is needed for Agent 4's session
     persistence and for nothing before that.
     """
+    variant = config.get("variant", "full")
     critic_max_iterations = config.get("critic_max_iterations", 3)
+
+    if variant == "baseline":
+        raise ValueError(
+            "the baseline variant does not run through the graph; use "
+            "scripts/run_baseline.py"
+        )
 
     def node(agent: AgentNode, name: str) -> Callable[[LuxcalState], Awaitable[dict]]:
         """Bind config and logger to an agent, leaving LangGraph a state-only node."""
@@ -114,7 +121,8 @@ def build_graph(config: dict, logger: RunLogger) -> CompiledStateGraph:
     graph.add_node("profiler", node(run_profiler, "profiler"))
     graph.add_node("calibrate", node(run_calibration, "calibrate"))
     graph.add_node("ideate", node(run_ideation, "ideate"))
-    graph.add_node("critic", node(run_critic, "critic"))
+    if variant != "minus_critic":
+        graph.add_node("critic", node(run_critic, "critic"))
 
     graph.set_entry_point("profiler")
     graph.add_conditional_edges(
@@ -127,13 +135,19 @@ def build_graph(config: dict, logger: RunLogger) -> CompiledStateGraph:
         gate_router,
         {"proceed": "ideate", "refuse": END, "error": END},
     )
-    graph.add_edge("ideate", "critic")
-    # "pass" ends the run until Agent 4 exists; it becomes "advise" then, and
-    # that is the only line which changes.
-    graph.add_conditional_edges(
-        "critic",
-        route_loop,
-        {"pass": END, "revise": "ideate", "escalate": END, "error": END},
-    )
+    if variant == "minus_critic":
+        # The whole ablation: Agent 3's first concept is the output. The critic
+        # node is not merely bypassed, it is never added to the graph, so no
+        # judge call can occur and `critic_iterations` is structurally 0.
+        graph.add_edge("ideate", END)
+    else:
+        graph.add_edge("ideate", "critic")
+        # "pass" ends the run until Agent 4 exists; it becomes "advise" then,
+        # and that is the only line which changes.
+        graph.add_conditional_edges(
+            "critic",
+            route_loop,
+            {"pass": END, "revise": "ideate", "escalate": END, "error": END},
+        )
 
     return graph.compile()

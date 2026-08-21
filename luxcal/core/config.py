@@ -14,12 +14,23 @@ directory, which for this project is the repository root.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import Field
 
 from luxcal.core.schemas import DimensionId, LuxcalModel
+
+# The ablation conditions. A single enum rather than a set of boolean flags:
+# a reviewer reading a variant config sees one line naming the condition, and
+# no combination of flags can express a variant that was never designed.
+#
+#   full          the complete pipeline
+#   minus_critic  Agent 3's first concept is final; the Critic never runs
+#   minus_loop    the Critic runs once and records a verdict, but no revision
+#   llm_bands     the ceilings come from model judgement, not the arithmetic
+#   baseline      no architecture at all; see scripts/run_baseline.py
+Variant = Literal["full", "minus_critic", "minus_loop", "llm_bands", "baseline"]
 
 
 class RunConfig(LuxcalModel):
@@ -39,6 +50,14 @@ class RunConfig(LuxcalModel):
         description="Pinned model for the Agent 2 gate and ranking, and the Critic.",
     )
     rubric_path: Path = Field(description="Path to the versioned rubric file.")
+    variant: Variant = Field(
+        default="full",
+        description=(
+            "The ablation condition, read by `build_graph` and by Agent 2. This "
+            "is what changes behaviour; run_single's --variant flag only labels "
+            "the run in the manifest."
+        ),
+    )
     critic_max_iterations: int = Field(
         default=3,
         ge=1,
