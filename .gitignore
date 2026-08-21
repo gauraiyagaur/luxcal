@@ -5,3 +5,4 @@ __pycache__/
 runs/
 .pytest_cache/
 *.parquet'nanalysis/*.jsonl
+nanalysis/
