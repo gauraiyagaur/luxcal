@@ -6,3 +6,5 @@ runs/
 .pytest_cache/
 *.parquet'nanalysis/*.jsonl
 nanalysis/
+
+analysis/
