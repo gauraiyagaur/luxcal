@@ -4,4 +4,4 @@ __pycache__/
 .env
 runs/
 .pytest_cache/
-*.parquet
+*.parquet'nanalysis/*.jsonl
