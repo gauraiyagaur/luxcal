@@ -134,10 +134,13 @@ async def run(args: argparse.Namespace) -> Path:
 
     try:
         final_state = await app.ainvoke(state)
-    except Exception:
+    except Exception as exc:
         # A run that dies mid-graph must still leave a manifest behind, or the
-        # run directory is an unreadable fragment (SPEC §7).
+        # run directory is an unreadable fragment (SPEC §7). The exception
+        # class is recorded too, so a batch resume can tell a transient API
+        # failure from a genuine one.
         traceback.print_exc()
+        logger.save_error(exc)
         final_state = {**state, "terminal_state": "ERROR"}
 
     final_state = {

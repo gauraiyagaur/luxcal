@@ -14,6 +14,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import traceback
 import time
 import uuid
 from datetime import datetime, timezone
@@ -155,6 +156,30 @@ class RunLogger:
         """Snapshot the shared state after a graph node has run."""
         name = node if iteration is None else f"{node}_{iteration}"
         _write_json(self._run_dir / "states" / f"{name}.json", state)
+
+    def save_error(self, exc: BaseException) -> None:
+        """Record the exception that terminated a run, as `error.json`.
+
+        `terminal_state: ERROR` alone cannot distinguish a transient API
+        failure from a response that failed validation three times, and the
+        two want opposite treatment on a batch resume — the first should be
+        retried, the second is a real result. The class and module are written
+        out so that decision reads an artefact rather than inferring one.
+
+        A run that ended ERROR with no `error.json` exhausted its schema
+        retries: the agent returned the terminal state without raising.
+        """
+        _write_json(
+            self._run_dir / "error.json",
+            {
+                "exception_class": type(exc).__name__,
+                "exception_module": type(exc).__module__,
+                "message": str(exc),
+                "traceback": "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)
+                ),
+            },
+        )
 
     def save_retrieval(self, key: str, payload: dict | str) -> None:
         """Cache one external query payload under `retrieval/<key>.json`.

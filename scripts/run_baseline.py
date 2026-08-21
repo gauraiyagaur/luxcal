@@ -131,9 +131,12 @@ async def run(args: argparse.Namespace) -> Path:
             )
         state = {**state, "concept": concept, "terminal_state": "PASS"}
     except RETRYABLE:
+        # Schema retries exhausted: a real result, not a transient failure, so
+        # deliberately no error.json (see RunLogger.save_error).
         state = {**state, "terminal_state": "ERROR"}
-    except Exception:
+    except Exception as exc:
         traceback.print_exc()
+        logger.save_error(exc)
         state = {**state, "terminal_state": "ERROR"}
 
     logger.finalise(state)
