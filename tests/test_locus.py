@@ -10,7 +10,13 @@ from typing import get_args
 
 import pytest
 
-from luxcal.core.locus import LOCUS_DESCRIPTIONS, LOCUS_GRID, filter_loci
+from luxcal.core.locus import (
+    AI_POSITION_VISIBILITY,
+    LOCUS_AI_POSITION,
+    LOCUS_DESCRIPTIONS,
+    LOCUS_GRID,
+    filter_loci,
+)
 from luxcal.core.schemas import Band, ExclusionReason, GridLocus
 
 BACKSTAGE_CELLS = ["PRE_BACKSTAGE", "AT_BACKSTAGE", "POST_BACKSTAGE", "NON_BACKSTAGE"]
@@ -42,6 +48,19 @@ def test_descriptions_cover_exactly_the_grid() -> None:
     """
     assert set(LOCUS_DESCRIPTIONS) == set(LOCUS_GRID)
     assert all(description for description in LOCUS_DESCRIPTIONS.values())
+
+
+def test_ai_position_map_covers_the_grid_and_matches_its_visibility() -> None:
+    """`LOCUS_AI_POSITION` must agree with the grid it was extracted from.
+
+    The map states the facing axis a second time, so it can drift from
+    `LOCUS_GRID`. Every cell's declared position must imply exactly the native
+    visibility the grid already records for that cell.
+    """
+    assert set(LOCUS_AI_POSITION) == set(LOCUS_GRID)
+    for locus, position in LOCUS_AI_POSITION.items():
+        native_visibility, _ = LOCUS_GRID[locus]
+        assert AI_POSITION_VISIBILITY[position] == native_visibility
 
 
 def test_native_visibility_follows_the_facing_axis() -> None:

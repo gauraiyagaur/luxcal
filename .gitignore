@@ -8,16 +8,18 @@ runs/
 
 # Analysis outputs.
 #
-# The two analysed datasets are tracked so the campaign is version-pinned
+# The analysed datasets are tracked so the campaign is version-pinned
 # alongside the code that produced it, and submittable as an appendix. They
 # re-include past the `*.parquet` rule above, which would otherwise exclude
 # the frame; `analysis/*` rather than `analysis/` so git descends far enough
 # to see the exceptions.
 #
-# The raw run directories stay ignored (runs/, above) — the two files below
-# regenerate from them via scripts/aggregate.py and scripts/concepts.py.
+# The raw run directories stay ignored (runs/, above) — the three files
+# below regenerate from them via scripts/aggregate.py, scripts/concepts.py
+# and scripts/kpi.py.
 # The batch logs stay ignored too: they are intermediate, and
 # batch_errors.jsonl holds records from an aborted first attempt.
 analysis/*
 !analysis/runs.parquet
 !analysis/concepts.csv
+!analysis/kpis.json

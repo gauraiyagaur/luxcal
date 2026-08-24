@@ -12,7 +12,13 @@ being assigned per cell.
 from __future__ import annotations
 
 from luxcal.core.ceilings import BAND_ORDER
-from luxcal.core.schemas import Band, ExcludedLocus, ExclusionReason, GridLocus
+from luxcal.core.schemas import (
+    AIPosition,
+    Band,
+    ExcludedLocus,
+    ExclusionReason,
+    GridLocus,
+)
 
 # Native (visibility, intensity) demand per cell, transcribed from the SPEC
 # §3.3 table. Insertion order is the grid's reading order — pre, at, post,
@@ -47,6 +53,38 @@ LOCUS_DESCRIPTIONS: dict[GridLocus, str] = {
     "POST_CLIENT": "Direct aftercare communication; client-direct, after the encounter",
     "NON_BACKSTAGE": "Product and design development input; backstage, outside any client encounter",
     "NON_CLIENT": "Brand content and narrative generation; client-direct, outside any client encounter",
+}
+
+# The `ai_position` each grid column corresponds to.
+#
+# Made explicit for the evaluation. The correspondence was previously only
+# implicit — in the grid comment in `schemas.py` and in `test_locus.py`'s
+# facing-axis assertion — so anything reading it was inferring rather than
+# citing a source. A concept whose declared position disagrees with its
+# locus's column is not necessarily wrong: it may be declaring a higher
+# visibility than the locus name implies, which is the honest answer. Treat a
+# mismatch as a declared inconsistency to be inspected, not an error.
+LOCUS_AI_POSITION: dict[GridLocus, AIPosition] = {
+    "PRE_BACKSTAGE": "BACKSTAGE",
+    "PRE_ADVISOR": "ADVISOR_MEDIATED",
+    "PRE_CLIENT": "CLIENT_FACING",
+    "AT_BACKSTAGE": "BACKSTAGE",
+    "AT_ADVISOR": "ADVISOR_MEDIATED",
+    "AT_CLIENT": "CLIENT_FACING",
+    "POST_BACKSTAGE": "BACKSTAGE",
+    "POST_ADVISOR": "ADVISOR_MEDIATED",
+    "POST_CLIENT": "CLIENT_FACING",
+    "NON_BACKSTAGE": "BACKSTAGE",
+    "NON_CLIENT": "CLIENT_FACING",
+}
+
+# The native visibility demand of each position — the same facing axis as
+# above, read from the column headers of the SPEC §3.3 grid rather than from
+# any single cell.
+AI_POSITION_VISIBILITY: dict[AIPosition, Band] = {
+    "BACKSTAGE": "LOW",
+    "ADVISOR_MEDIATED": "MEDIUM",
+    "CLIENT_FACING": "HIGH",
 }
 
 
