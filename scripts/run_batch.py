@@ -344,6 +344,15 @@ async def execute(cell: Cell, case_path: Path, args: Namespace) -> Path:
 
     `baseline` does not go through the graph, so it runs via `run_baseline`;
     both entry points take the same Namespace and return the run directory.
+
+    `allow_dirty=True` is passed unconditionally, and only from here. By the
+    time this runs, `preflight_git` has already confirmed the tree was clean
+    at batch launch — so the rubric and code the runs execute against are
+    pinned. Leaving the per-run guard live would then re-check the tree after
+    every run and abort the remainder the moment the batch's own output made
+    it dirty, which is what cost Campaign 1 its first 164 cells. A standalone
+    run has no such pre-flight, so its guard stays live: this is not a change
+    to the default.
     """
     runner = run_baseline.run if cell.variant == "baseline" else run_single.run
     return await runner(
@@ -353,7 +362,7 @@ async def execute(cell: Cell, case_path: Path, args: Namespace) -> Path:
             replicate=cell.replicate,
             config=VARIANT_CONFIGS[cell.variant],
             runs_dir=args.runs_dir,
-            allow_dirty=args.allow_dirty,
+            allow_dirty=True,
         )
     )
 

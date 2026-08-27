@@ -309,6 +309,17 @@ def _git_commit_sha(allow_dirty: bool) -> str:
     a new, uncommitted module would let a run record a SHA for a tree that
     never contained the code that produced it. Ignored paths — `runs/`, the
     virtualenv — are excluded by `--porcelain` and so do not trip the guard.
+
+    Batch runs deliberately skip this check. `scripts/run_batch.py` performs
+    the same check once, before any cell is dispatched, and then passes
+    `allow_dirty=True` into every run it launches: re-checking per run would
+    abort the remainder of a batch as soon as the batch's own output made the
+    tree dirty. A standalone run has no equivalent pre-flight, so the guard
+    stays live there.
+
+    The SHA itself is unaffected either way — it is always `git rev-parse
+    HEAD`, the commit actually checked out when the run started, so a run
+    stays traceable to a code version regardless of whether the guard ran.
     """
     try:
         sha = subprocess.run(
