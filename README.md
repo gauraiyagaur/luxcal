@@ -108,17 +108,6 @@ Every run records its git commit SHA, the rubric version and SHA-256, both model
 
 Raw run directories are excluded from the repository by size. The analysed outputs — `analysis/runs.parquet`, `analysis/concepts.csv`, `analysis/kpis.json` — are committed and version-pinned to the commit that produced them.
 
-## Campaign 1 results
-
-165 runs: 11 brand cases × 5 variants × 3 replicates.
-
-- The unconstrained baseline breached the ceiling the full system derived for the same case in **87.9%** of runs. Every architecture-bearing variant breached **zero** times.
-- Visibility was calibrated LOW in **112 of 132** calibrated runs and HIGH in none. Mean locus survival was **3.12 of 11** grid cells.
-- LLM-computed ceilings reproduced the deterministic arithmetic in **9 of 11** cases; both divergences were stricter, not looser.
-- The critique loop fired **once in 33** full runs. It repaired the concept when it did.
-
-Full figures are in `analysis/kpis.json`, organised by research question with sample-size caveats attached.
-
 ## Known limitations
 
 - **Profiler provenance is unverified.** Agent 1 is instructed to quote verbatim evidence and to abstain where the brief is silent, but no code checks that a span is genuinely from the brief or that it bears on the dimension it is attached to. The evidence-rate metric is contaminated and is not reported.
